@@ -39,8 +39,8 @@ class Project:
                                     value=self.admin_email,
                                     perm_type='user',
                                     role='owner',
-                                    notify=False,
-                                    email_message=None
+                                    notify=True,
+                                    email_message='Hi'
                                     )
         self.cost = spreadsheet1
 
@@ -50,8 +50,8 @@ class Project:
                                     value=self.admin_email,
                                     perm_type='user',
                                     role='owner',
-                                    notify=False,
-                                    email_message=None
+                                    notify=True,
+                                    email_message='Hi'
                                     )
         self.inner_cost = spreadsheet2
 
@@ -68,23 +68,23 @@ class Project:
                                     value=self.admin_email,
                                     perm_type='user',
                                     role='owner',
-                                    notify=False,
-                                    email_message=None
+                                    notify=True,
+                                    email_message='Hi'
                                     )
             spreadsheet.share(
                                     value=self.client_email,
                                     perm_type='user',
                                     role='writer',
-                                    notify=False,
-                                    email_message=None
+                                    notify=True,
+                                    email_message='Hi'
                                     )
             try:
                 spreadsheet.share(
                                         value=developer['email'],
                                         perm_type='user',
                                         role='writer',
-                                        notify=False,
-                                        email_message=None
+                                        notify=True,
+                                        email_message='Hi'
                                         )
             except:
                 print('No Google user with email %s' % developer['email'])
@@ -99,16 +99,12 @@ class Project:
             #                       ('Дата', 'Название работ', 
             #                        'Объем работ, часов', 'Статус оплаты (заполняется только РП)')):
             #     worksheet.update_acell(cell, text)
-            self.service.files().update(fileId=spreadsheet.id,
-                                        addParents=self.folder['id'],
-                                        fields='id, parents').execute()
             self.accounts[developer['Имя']] = spreadsheet
 
     def __create_worksheets(self, spreadsheet):
         for account in self.accounts:
-            ws_work = spreadsheet.add_worksheet('Работы %s' % account, 300, 12)
-            ws_work.update_cell(1, 1, '=IMPORTRANGE("%s", "timesheet!A:D")' % 
-                                self.accounts[account].id)
+            ws_work = spreadsheet.add_worksheet(f'Работы {account}', 300, 12)
+            ws_work.update_cell(1, 1, f'=IMPORTRANGE("{self.accounts[account].id}", "timesheet!A:D")')
 
     def __update_cost(self):
         spreadsheet = self.cost
@@ -227,30 +223,31 @@ class Project:
         ws_result.update_cells(cell_list, value_input_option='USER_ENTERED')
 
         row = 10
+        sum_row = row + len(self.metadata['participants'])
         for developer in self.metadata['participants']:
             values = (developer['Имя'],
                       developer['Должность'],
                       developer['Ставка внешняя'],
                       developer['Ставка внутренняя'],
-                      '=ЕСЛИ($C10 >= 2000, 2000, $C10)',
+                      f'=ЕСЛИ($C{row} >= 2000, 2000, $C{row})',
                       '''=СУММЕСЛИ('Работы {0}'!$D$2:$D, "Акт", 'Работы {0}'!$C$2:$C)'''.format(developer['Имя']),
-                      '=$F10*($C10/$E10)',
-                      '=$E10*$G10',
-                      '=$F10*$D10',
+                      f'=$F{row}*($C{row}/$E{row})',
+                      f'=$E{row}*$G{row}',
+                      f'=$F{row}*$D{row}',
                       '',
                       '',
-                      '=ЕСЛИ($K10 > 0, ОКРУГЛ($I10 * $K10 / $K$12), 0)',
-                      '=ОКРУГЛ($L10*100/$L$12,1)',
+                      f'=ЕСЛИ($K{row} > 0, ОКРУГЛ($I{row} * $K{row} / $K${sum_row}), 0)',
+                      f'=ОКРУГЛ($L{row}*100/$L${sum_row},1)',
                       '',
-                      '=$C$5 * $N10 / 100',
+                      f'=$C$5 * $N{row} / 100',
                       '',
-                      '=ЕСЛИ(ОКРУГЛ($I10+$O10, -3) >=$I10, ОКРУГЛ($I10+$O10, -3), ОКРУГЛВВЕРХ($I10, -3))',
+                      f'=ЕСЛИ(ОКРУГЛ($I{row}+$O{row}, -3) >=$I{row}, ОКРУГЛ($I{row}+$O{row}, -3), ОКРУГЛВВЕРХ($I{row}, -3))',
                       '',
                       '''=СУММЕСЛИ('Работы {0}'!$D$2:$D, "Акт", 'Работы {0}'!$C$2:$C) + СУММЕСЛИ('Работы {0}'!$D$2:$D,
                       "", 'Работы {0}'!$C$2:$C)'''.format(developer['Имя']),
-                      '=$S10*$C10',
-                      '=$D10*$S10',
-                      '=$T10-$U10')
+                      f'=$S{row}*$C{row}',
+                      f'=$D{row}*$S{row}',
+                      f'=$T{row}-$U{row}')
             # for col, value in zip(range(1, 23), values):
             #     ws_result.update_cell(row, col, value)
             cell_list = ws_result.range('A{0}:V{0}'.format(str(row)))
@@ -263,6 +260,19 @@ class Project:
         # for col in (6, 7, 8, 9, 11, 12, 13, 14, 15, 17, 19, 20, 21, 22):
         for col in ('F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'O', 'Q', 'S', 'T', 'U', 'V'):
             ws_result.update_acell('%s%s' % (col, row), '=СУММ({0}10:{0}{1})'.format(col, str(row-1)))
+
+    def __move_to_folder(self):
+
+        def move(id):
+            self.service.files().update(fileId=id,
+                                        addParents=self.folder['id'],
+                                        fields='id, parents').execute()
+
+        for id in (self.metadata_GS_ID, self.cost.id, self.inner_cost.id):
+            move(id)
+
+        for account in self.accounts.values():
+            move(account.id)
 
     def main(self):
         scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
@@ -283,6 +293,7 @@ class Project:
         self.__create_accounts()
         self.__update_cost()
         self.__update_inner_cost()
+        self.__move_to_folder()
 
 
 if __name__ == '__main__':

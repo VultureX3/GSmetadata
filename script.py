@@ -46,6 +46,8 @@ class Project:
                             )
         self.cost = spreadsheet1
 
+        time.sleep(3)
+
         spreadsheet2 = self.client.create(f'Внутренние расчеты стоимости проекта {self.project_name} (конфиденциально)')
         spreadsheet2.share(
                             value=self.admin_email,
@@ -58,6 +60,7 @@ class Project:
 
     def __create_accounts(self):
         for developer in self.metadata['participants']:
+            time.sleep(5)
             spreadsheet = self.client.create(f'Учет трудозатрат {developer["Имя"]} проект {self.project_name}')
             spreadsheet.share(
                                 value=self.admin_email,
@@ -85,7 +88,6 @@ class Project:
                 cell.value = value
             worksheet.update_cells(cell_list, value_input_option='USER_ENTERED')
             self.accounts[developer['Имя']] = spreadsheet
-            time.sleep(3)
 
     def __create_worksheets(self, spreadsheet):
         for account in self.accounts:
@@ -238,6 +240,7 @@ class Project:
         self.__create_folder()
         self.__create_cost()
         self.__create_accounts()
+        time.sleep(5)
         self.__update_cost()
         time.sleep(100)
         self.__update_inner_cost()

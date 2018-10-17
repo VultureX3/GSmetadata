@@ -21,6 +21,25 @@ class Project:
         self.accounts = {}
         self.cost = self.inner_cost = None
 
+    @staticmethod
+    def __share(spreadsheet, value, role):
+        sharing = False
+        errors = 0
+        while not sharing and errors < 3:
+            try:
+                spreadsheet.share(
+                            value=value,
+                            perm_type='user',
+                            role=role,
+                            notify=False
+                            )
+                sharing = True
+                print(f'{spreadsheet.title}: Permission granted to {value} as {role}')
+            except gspread.exceptions.APIError:
+                print('Error: ', spreadsheet.title, value,
+                      '''(Don't worry, I'm gonna fix that in a moment, just some Google bugs)''')
+                errors += 1
+
     def __get_metadata(self):
         metadata_gs = self.client.open_by_key(self.metadata_gs_id)
         for sheet in metadata_gs:
@@ -37,48 +56,18 @@ class Project:
 
     def __create_cost(self):
         spreadsheet1 = self.client.create(f'Расчет стоимости проект {self.project_name}')
-        spreadsheet1.share(
-                            value=self.admin_email,
-                            perm_type='user',
-                            role='owner',
-                            notify=False,
-                            email_message=None
-                            )
+        self.__share(spreadsheet1, self.admin_email, 'owner')
         self.cost = spreadsheet1
 
-        time.sleep(3)
-
         spreadsheet2 = self.client.create(f'Внутренние расчеты стоимости проекта {self.project_name} (конфиденциально)')
-        spreadsheet2.share(
-                            value=self.admin_email,
-                            perm_type='user',
-                            role='owner',
-                            notify=False,
-                            email_message=None
-                            )
+        self.__share(spreadsheet2, self.admin_email, 'owner')
+
         self.inner_cost = spreadsheet2
 
     def __create_accounts(self):
         for developer in self.metadata['participants']:
-            time.sleep(5)
             spreadsheet = self.client.create(f'Учет трудозатрат {developer["Имя"]} проект {self.project_name}')
-            spreadsheet.share(
-                                value=self.admin_email,
-                                perm_type='user',
-                                role='owner',
-                                notify=False,
-                                email_message=None
-                                )
-            try:
-                spreadsheet.share(
-                                value=developer['email'],
-                                perm_type='user',
-                                role='writer',
-                                notify=False,
-                                email_message=None
-                                )
-            except gspread.exceptions.APIError:
-                print(f'There is no Google account associated with this email address: {developer["email"]}')
+            self.__share(spreadsheet, self.admin_email, 'owner')
 
             worksheet = spreadsheet.add_worksheet('timesheet', 300, 12)
             spreadsheet.del_worksheet(spreadsheet.sheet1)
@@ -105,12 +94,11 @@ class Project:
         for cell, value in zip(cell_list, ('Исполнитель', 'Должность', 'К оплате, часов', 'Ставка, рублей', 
                                'К оплате, рублей', 'Примечания')):
             cell.value = value
-        ws_result.update_cells(cell_list, value_input_option='USER_ENTERED')
 
         row = 2
         for developer in self.metadata['participants']:
-            cell_list = ws_result.range(row, 1, row, 6)
-            for cell, value in zip(cell_list, (
+            new_cell_list = ws_result.range(row, 1, row, 6)
+            for cell, value in zip(new_cell_list, (
                     developer['Имя'],
                     developer['Должность'],
                     '''=СУММЕСЛИ('Работы {0}'!$D$2:$D, "Акт", 'Работы {0}'!$C$2:$C)'''.format(developer['Имя']),
@@ -118,18 +106,28 @@ class Project:
                     '=$C{0}*$D{0}'.format(str(row)),
                     developer['Комментарии к затратам'])):
                 cell.value = value
-            ws_result.update_cells(cell_list, value_input_option='USER_ENTERED')
+            cell_list += new_cell_list
             row += 1
 
+        new_cell_list = []
         for resource in self.metadata['resources']:
             for col, value in zip((1, 5, 6), (
                     resource['Наименование'],
                     resource['Стоимость, рублей'],
                     resource['Комментарии к затратам'])):
-                ws_result.update_cell(row, col, value)
+                cell = ws_result.cell(row, col)
+                cell.value = value
+                new_cell_list.append(cell)
             row += 1
-        ws_result.update_cell(row, 1, 'Итого')
-        ws_result.update_cell(row, 5, f'=СУММ(E2:E{str(row-1)})')
+
+        for col, value in zip((1, 5), (
+                    'Итого',
+                    f'=СУММ(E2:E{str(row-1)})')):
+            cell = ws_result.cell(row, col)
+            cell.value = value
+            new_cell_list.append(cell)
+        cell_list += new_cell_list
+        ws_result.update_cells(cell_list, value_input_option='USER_ENTERED')
 
     def __update_inner_cost(self):
         spreadsheet = self.inner_cost
@@ -146,20 +144,23 @@ class Project:
                                 'Бонусный фонд, рублей',
                                 'Предприятию включая операционные расходы и фонд встреч, рублей')):
             cell.value = value
-        ws_result.update_cells(cell_list, value_input_option='USER_ENTERED')
 
-        cell_list = ws_result.range('C2:C6')
-        for cell, value in zip(cell_list, ('=$H$12',
-                                           '=$I$12',
-                                           '',
-                                           '=((($C$2*0.9)-$C$3)/2)-$C$4',
-                                           '=$C$2-$C$3-$C$5')):
+        new_cell_list = ws_result.range('C2:C6')
+        for cell, value in zip(new_cell_list, ('=$H$12',
+                                               '=$I$12',
+                                               '',
+                                               '=((($C$2*0.9)-$C$3)/2)-$C$4',
+                                               '=$C$2-$C$3-$C$5')):
             cell.value = value
-        ws_result.update_cells(cell_list, value_input_option='USER_ENTERED')
+        cell_list += new_cell_list
 
-        for col, value in zip((3, 11, 17, 19), 
+        new_cell_list = []
+        for col, value in zip((3, 11, 17, 19),
                               ('Основной ФОТ', 'Премиальный ФОТ', 'К оплате', 'Общая задолженность')):
-            ws_result.update_cell(8, col, value)
+            cell = ws_result.cell(8, col)
+            cell.value = value
+            new_cell_list.append(cell)
+        cell_list += new_cell_list
 
         headers = ('Исполнитель', 'Должность', 'Ставка заказчику, рублей', 'Ставка разработчику, рублей',
                    'Ставка для документов заказчику, рублей', 'По актам, часов', 'Часов для документов',
@@ -170,10 +171,10 @@ class Project:
                    'Общая задолженность заказчика, рублей', 'Общая задолженность разработчику, рублей',
                    'Общая задолженность предприятию, рублей')
 
-        cell_list = ws_result.range('A9:V9')
-        for cell, value in zip(cell_list, headers):
+        new_cell_list = ws_result.range('A9:V9')
+        for cell, value in zip(new_cell_list, headers):
             cell.value = value
-        ws_result.update_cells(cell_list, value_input_option='USER_ENTERED')
+        cell_list += new_cell_list
 
         row = 10
         sum_row = row + len(self.metadata['participants'])
@@ -201,24 +202,28 @@ class Project:
                       f'=$S{row}*$C{row}',
                       f'=$D{row}*$S{row}',
                       f'=$T{row}-$U{row}')
-            cell_list = ws_result.range('A{0}:V{0}'.format(str(row)))
-            for cell, value in zip(cell_list, values):
+            new_cell_list = ws_result.range('A{0}:V{0}'.format(str(row)))
+            for cell, value in zip(new_cell_list, values):
                 cell.value = value
-            ws_result.update_cells(cell_list, value_input_option='USER_ENTERED')
+            cell_list += new_cell_list
             row += 1
 
-        ws_result.update_cell(row, 1, 'Итого')
-        for col in ('F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'O', 'Q', 'S', 'T', 'U', 'V'):
-            ws_result.update_acell(f'{col}{str(row)}', '=СУММ({0}10:{0}{1})'.format(col, str(row-1)))
+        cols = ('F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'O', 'Q', 'S', 'T', 'U', 'V')
+        new_cell_list = [ws_result.acell(f'{col}{row}') for col in cols]
+        for cell, col in zip(new_cell_list, cols):
+            cell.value = '=СУММ({0}10:{0}{1})'.format(col, str(row-1))
+        cell_list += new_cell_list
+        ws_result.update_cells(cell_list, value_input_option='USER_ENTERED')
 
     def __move_to_folder(self):
 
         def move(file_id):
+            print('moving ', file_id)
             self.service.files().update(fileId=file_id,
                                         addParents=self.folder['id'],
                                         fields='id, parents').execute()
 
-        for sheet_id in (self.metadata_gs_id, self.cost.id, self.inner_cost.id):
+        for sheet_id in (self.cost.id, self.inner_cost.id, self.metadata_gs_id):
             move(sheet_id)
 
         for account in self.accounts.values():
@@ -237,19 +242,21 @@ class Project:
         self.service = build('drive', 'v3', http=creds.authorize(Http()))
 
         self.__get_metadata()
+        print('metadata read')
         self.__create_folder()
+        print('folder created')
         self.__create_cost()
+        print('cost & inner cost sheets created')
         self.__create_accounts()
-        time.sleep(5)
+        print('accounts created')
         self.__update_cost()
-        time.sleep(100)
         self.__update_inner_cost()
+        print('cost & inner cost sheets updated')
         self.__move_to_folder()
+        print('done!')
 
 
 if __name__ == '__main__':
-
     data = json.load(open('admin_data.json'))
-
     my_project = Project(data['metadata_gs_id'], data['admin_email'], data['info_file'])
     my_project.main()

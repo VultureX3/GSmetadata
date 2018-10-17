@@ -10,12 +10,13 @@ from oauth2client.service_account import ServiceAccountCredentials
 
 class Project:
 
-    def __init__(self, metadata_gs_id, admin_email, info_file):
+    def __init__(self, metadata_gs_id, admin_email, info_file, sharing):
         self.project_name = ''
         self.metadata_gs_id = metadata_gs_id
         self.folder = None
         self.admin_email = admin_email
         self.info_file = info_file
+        self.sharing = sharing
         self.client = self.service = None
         self.metadata = {}
         self.accounts = {}
@@ -36,9 +37,13 @@ class Project:
                 sharing = True
                 print(f'{spreadsheet.title}: Permission granted to {value} as {role}')
             except gspread.exceptions.APIError:
-                print('Error: ', spreadsheet.title, value,
+                if role == 'owner':
+                    print('Error: ', spreadsheet.title,
                       '''(Don't worry, I'm gonna fix that in a moment, just some Google bugs)''')
-                errors += 1
+                    errors += 1
+                else:
+                    print(f'Error: no Google account associated with this email: {value}')
+                    errors += 3
 
     def __get_metadata(self):
         metadata_gs = self.client.open_by_key(self.metadata_gs_id)
@@ -76,6 +81,10 @@ class Project:
                                    'Объем работ, часов', 'Статус оплаты (заполняется только РП)')):
                 cell.value = value
             worksheet.update_cells(cell_list, value_input_option='USER_ENTERED')
+
+            if self.sharing:
+                self.__share(spreadsheet, developer['email'], 'writer')
+
             self.accounts[developer['Имя']] = spreadsheet
 
     def __create_worksheets(self, spreadsheet):
@@ -218,7 +227,6 @@ class Project:
     def __move_to_folder(self):
 
         def move(file_id):
-            print('moving ', file_id)
             self.service.files().update(fileId=file_id,
                                         addParents=self.folder['id'],
                                         fields='id, parents').execute()
@@ -258,5 +266,5 @@ class Project:
 
 if __name__ == '__main__':
     data = json.load(open('admin_data.json'))
-    my_project = Project(data['metadata_gs_id'], data['admin_email'], data['info_file'])
+    my_project = Project(data['metadata_gs_id'], data['admin_email'], data['info_file'], data['sharing'])
     my_project.main()

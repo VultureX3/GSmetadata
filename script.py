@@ -31,19 +31,14 @@ class Project:
                 spreadsheet.share(
                             value=value,
                             perm_type='user',
-                            role=role,
-                            notify=False
+                            role=role
                             )
                 sharing = True
                 print(f'{spreadsheet.title}: Permission granted to {value} as {role}')
             except gspread.exceptions.APIError:
-                if role == 'owner':
-                    print('Error: ', spreadsheet.title,
-                      '''(Don't worry, I'm gonna fix that in a moment, just some Google bugs)''')
-                    errors += 1
-                else:
-                    print(f'Error: no Google account associated with this email: {value}')
-                    errors += 3
+                print('Error: ', spreadsheet.title,
+                  '''(Don't worry, I'm gonna fix that in a moment, just some Google bugs)''')
+                errors += 1
 
     def __get_metadata(self):
         metadata_gs = self.client.open_by_key(self.metadata_gs_id)
@@ -139,6 +134,9 @@ class Project:
         ws_result.update_cells(cell_list, value_input_option='USER_ENTERED')
 
     def __update_inner_cost(self):
+        if len(self.accounts) > 15:
+            time.sleep(100)
+            
         spreadsheet = self.inner_cost
         ws_result = spreadsheet.add_worksheet('Итог', 300, 26)
         spreadsheet.del_worksheet(spreadsheet.sheet1)
